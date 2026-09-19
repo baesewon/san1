@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>대한민국 3D 산 & 지형 고도 탐색기</title>
+  
+  <!-- Pretendard Font -->
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  
+  <!-- MapLibre GL JS v4 -->
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app-container">
+    <!-- 3D 지형 지도 영역 -->
+    <div id="map"></div>
+
+    <!-- 좌측 사이드바: 산 목록 & 검색 -->
+    <aside id="sidebar" class="glass-panel">
+      <div class="sidebar-header">
+        <div class="brand-badge">KOREA 3D TERRAIN</div>
+        <div class="sidebar-title">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m8 3 4 8 5-5 5 15H2L8 3z"/>
+          </svg>
+          한국 3D 산 & 지형도
+        </div>
+        <div class="sidebar-subtitle">실시간 고도 측정 & 100대 명산 3D 시네마틱 뷰</div>
+      </div>
+
+      <!-- 검색 & 지역 필터 -->
+      <div class="search-filter-section">
+        <div class="search-box">
+          <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <path d="m21 21-4.3-4.3"/>
+          </svg>
+          <input type="text" id="search-input" class="search-input" placeholder="산 이름, 봉우리, 산맥 검색 (예: 설악산, 지리산, ㅅㅇㅅ)" />
+        </div>
+
+        <!-- 고도별 색상 안내 범례 -->
+        <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.3); padding:6px 10px; border-radius:6px; font-size:11px; border:1px solid rgba(255,255,255,0.06);">
+          <span style="display:flex; align-items:center; gap:4px; font-weight:600;"><span style="color:#ef4444; font-size:14px;">●</span> 빨강: 1,300m+</span>
+          <span style="display:flex; align-items:center; gap:4px; font-weight:600;"><span style="color:#10b981; font-size:14px;">●</span> 초록: 700~1,300m</span>
+          <span style="display:flex; align-items:center; gap:4px; font-weight:600;"><span style="color:#38bdf8; font-size:14px;">●</span> 파랑: 700m 미만</span>
+        </div>
+
+        <div class="filter-tags" id="region-tags">
+          <!-- 동적 태그 생성 -->
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--text-muted); margin-top:2px;">
+          <span>등록된 명산</span>
+          <span id="mountain-count" style="color:var(--accent-cyan); font-weight:700;">0개 산</span>
+        </div>
+      </div>
+
+      <!-- 산 카드 리스트 -->
+      <div class="mountain-list" id="mountain-list">
+        <!-- 동적 카드 생성 -->
+      </div>
+    </aside>
+
+    <!-- 사이드바 접기/펼치기 토글 버튼 -->
+    <button id="sidebar-toggle" title="사이드바 토글">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="m15 18-6-6 6-6"/>
+      </svg>
+    </button>
+
+    <!-- 산 상세 정보 팝업 모달 -->
+    <div id="detail-modal" class="glass-panel mountain-detail-modal" style="display:none;"></div>
+
+    <!-- 우측 상단 3D 컨트롤 및 레이어 패널 -->
+    <div class="top-controls">
+      <!-- 맵 레이어 전환 -->
+      <div class="glass-panel control-panel">
+        <div class="control-header">지도 레이어</div>
+        <div class="btn-group">
+          <button class="btn-item active" data-layer="satellite">위성 3D</button>
+          <button class="btn-item" data-layer="hybrid">하이브리드</button>
+          <button class="btn-item" data-layer="topo">등고 지형</button>
+        </div>
+      </div>
+
+      <!-- 3D 지형 입체 과장도 -->
+      <div class="glass-panel control-panel">
+        <div class="control-header">
+          <span>지형 기복 과장도</span>
+          <span id="exaggeration-val" class="slider-val">1.5x</span>
+        </div>
+        <div class="slider-control">
+          <input type="range" id="exaggeration-slider" class="range-slider" min="1.0" max="3.0" step="0.1" value="1.5">
+          <div class="slider-label-row">
+            <span>실제 비율 (1.0x)</span>
+            <span>입체 강조 (3.0x)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 아이콘 투명도 조절 (지형 관람 시 방해되지 않도록 조절 가능) -->
+      <div class="glass-panel control-panel">
+        <div class="control-header">
+          <span>아이콘 투명도 (평상시)</span>
+          <span id="opacity-val" class="slider-val">30%</span>
+        </div>
+        <div class="slider-control">
+          <input type="range" id="opacity-slider" class="range-slider" min="0.0" max="1.0" step="0.05" value="0.30">
+          <div class="slider-label-row">
+            <span>0% (완전 투명)</span>
+            <span>100% (선명)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3D 시네마틱 & 고도 분석 액션 -->
+      <div class="glass-panel control-panel">
+        <div class="control-header">3D 탐색 및 분석 도구</div>
+        <div class="action-btn-row">
+          <button class="action-btn" id="orbit-btn" title="주변 360도 회전 비행">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.85.83 6.72 2.24"/>
+              <path d="M21 3v6h-6"/>
+            </svg>
+            360° 궤도회전
+          </button>
+          <button class="action-btn" id="profile-btn" title="두 지점 간 고도 단면 프로파일 측정">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 3v18h18"/>
+              <path d="m19 9-5 5-4-4-3 3"/>
+            </svg>
+            고도 단면도
+          </button>
+          <button class="action-btn active" id="marker-toggle-btn" title="산 아이콘 표시/숨기기">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="10" r="3"/>
+              <path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 7 8 11.7z"/>
+            </svg>
+            아이콘 표시
+          </button>
+          <button class="action-btn active" id="hud-toggle-btn" title="하단 실시간 고도계 켜기/끄기">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </svg>
+            고도계
+          </button>
+        </div>
+        <button class="action-btn" id="reset-btn" style="width:100%;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+            <path d="M3 3v5h5"/>
+          </svg>
+          전국 전체 뷰로 초기화
+        </button>
+      </div>
+    </div>
+
+    <!-- 하단 실시간 고도 HUD (슬림 미니멀 디자인) -->
+    <div class="glass-panel bottom-hud" id="bottom-hud">
+      <div class="hud-item">
+        <div class="hud-label">실시간 해발 고도</div>
+        <div class="hud-value" id="hud-elevation">--- <span class="unit">m</span></div>
+      </div>
+      <div class="hud-divider"></div>
+      <div class="hud-item">
+        <div class="hud-label">현재 커서 좌표</div>
+        <div class="hud-value" id="hud-coords" style="font-size:12px; font-weight:600; color:#cbd5e1;">위치를 탐색 중...</div>
+      </div>
+      <div class="hud-divider"></div>
+      <div class="hud-item">
+        <div class="hud-label">지형 분류</div>
+        <div class="hud-value" id="hud-slope" style="font-size:12px; font-weight:600; color:var(--accent-emerald);">지형 측정 중</div>
+      </div>
+      <button id="close-hud-btn" class="hud-close-btn" title="고도계 숨기기">✕</button>
+    </div>
+
+    <!-- 화면 중앙 상단 고도 단면도 플로팅 가이드 배너 (이쁜 알림 카드) -->
+    <div id="profile-guide-banner">
+      <div class="guide-icon-box" id="guide-icon-box">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 2v20M2 12h20"/>
+        </svg>
+      </div>
+      <div class="guide-text-group">
+        <div class="guide-step-tag" id="guide-step-tag">
+          <span>●</span> 1단계: 시작 지점 선택
+        </div>
+        <div class="guide-main-msg" id="guide-main-msg">
+          지도에서 단면 측정을 시작할 첫 번째 지점을 클릭하세요
+        </div>
+      </div>
+      <button class="guide-cancel-btn" id="guide-cancel-btn">✕ 취소</button>
+    </div>
+
+    <!-- 하단 고도 단면도 (Profile) 차트 패널 -->
+    <div id="profile-panel" class="glass-panel">
+      <div class="profile-header">
+        <div class="profile-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+            <path d="M3 3v18h18"/>
+            <path d="m19 9-5 5-4-4-3 3"/>
+          </svg>
+          지점 간 고도 단면 프로파일 (Elevation Profile)
+        </div>
+        <div class="profile-stats">
+          <span id="stat-hover-group" class="profile-hover-stat" style="display:none;">
+            📍 마우스 위치: <strong id="stat-hover-elev" style="color:var(--accent-cyan); font-weight:800;">0 m</strong> (<span id="stat-hover-dist">0 km</span>)
+          </span>
+          <span>직선거리: <span class="profile-stat-val" id="stat-dist">0 km</span></span>
+          <span>최고: <span class="profile-stat-val" id="stat-max">0 m</span></span>
+          <span>최저: <span class="profile-stat-val" id="stat-min">0 m</span></span>
+          <span>누적상승: <span class="profile-stat-val" id="stat-gain">+0 m</span></span>
+          <button class="close-btn" id="close-profile" title="단면도 닫기">✕</button>
+        </div>
+      </div>
+      <div class="profile-chart-wrapper">
+        <canvas id="profile-canvas"></canvas>
+        <div id="profile-tooltip" class="profile-tooltip">
+          <div class="tooltip-elev">
+            <span class="label">해발고도</span>
+            <strong id="tt-elev">0</strong>
+            <span class="unit">m</span>
+          </div>
+          <div class="tooltip-sub">
+            <span>거리 <strong id="tt-dist">0</strong> km</span>
+            <span class="divider">•</span>
+            <span id="tt-type">산지</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 우측 하단 AI 챗봇 트리거 버튼 -->
+    <button id="chatbot-trigger" title="AI 챗봇 gpt-5-mini 대화">
+      <div class="badge-pulse"></div>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+    </button>
+
+    <!-- AI 챗봇 (gpt-5-mini) 대화 윈도우 -->
+    <div id="chatbot-window" class="glass-panel">
+      <!-- 챗봇 헤더 -->
+      <div class="chat-header">
+        <div class="chat-bot-info">
+          <div class="chat-avatar">AI</div>
+          <div class="chat-title-group">
+            <div class="chat-title">
+              gpt-5-mini
+              <span class="chat-model-tag">ONLINE</span>
+            </div>
+            <div class="chat-status">
+              <span class="chat-status-dot"></span>
+              3D 산악 & 지형 전문 어시스턴트
+            </div>
+          </div>
+        </div>
+        <div class="chat-header-actions">
+          <button class="icon-btn" id="chat-settings-btn" title="API 키 설정">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
+          <button class="icon-btn" id="chat-close-btn" title="닫기">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 메시지 목록 -->
+      <div class="chat-messages" id="chat-messages"></div>
+
+      <!-- 입력 영역 -->
+      <div class="chat-input-area">
+        <div class="chat-input-row">
+          <input type="text" id="chat-input" class="chat-input" placeholder="산이나 지형에 대해 물어보세요..." />
+          <button id="chat-send-btn" class="send-btn" title="전송">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <line x1="22" y1="2" x2="11" y2="13"/>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+          </button>
+        </div>
+        <div class="chat-api-status-bar">
+          <span id="api-key-status-text">API 키: 미설정</span>
+          <span class="api-key-link" id="open-api-key-link">API 키 변경/등록</span>
+        </div>
+      </div>
+
+      <!-- API 키 설정 모달 -->
+      <div id="api-key-modal">
+        <div class="api-modal-card">
+          <div class="api-modal-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            OpenAI API 키 설정
+          </div>
+          <div class="api-modal-desc">
+            입력하신 API 키는 브라우저 로컬(Local Storage)에만 안전하게 저장되며, <strong>gpt-5-mini</strong>와의 실시간 대화에 직접 사용됩니다.
+          </div>
+          <input type="password" id="api-key-input" class="api-input" placeholder="sk-proj-..." />
+          <div class="api-btn-row">
+            <button class="tag-btn" id="delete-api-key-btn" style="color:var(--accent-rose);">삭제</button>
+            <button class="tag-btn" id="cancel-api-key-btn">취소</button>
+            <button class="tag-btn active" id="save-api-key-btn">저장</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main JavaScript Bootstrap -->
+  <script type="module">
+    import { Korea3DMap } from './js/map.js';
+    import { ElevationManager } from './js/elevation.js';
+    import { UIManager } from './js/ui.js';
+    import { ChatbotManager } from './js/chatbot.js';
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const map = new Korea3DMap();
+      const elevation = new ElevationManager();
+      
+      // 실시간 마우스 커서 호버 시 HUD 업데이트
+      map.onElevationHover = (data) => {
+        elevation.updateHUD(data);
+      };
+
+      // 고도 단면도 파란색 선 마우스 호버 시 3D 지도 실시간 연동
+      elevation.onProfileHover = (point) => {
+        map.showProfileHover(point);
+      };
+      elevation.onProfileLeave = () => {
+        map.hideProfileHover();
+      };
+      elevation.onProfileClick = (point) => {
+        map.flyToProfilePoint(point);
+      };
+
+      map.init('map');
+
+      const ui = new UIManager(map, elevation);
+      const chatbot = new ChatbotManager(map);
+    });
+  </script>
+</body>
+</html>
